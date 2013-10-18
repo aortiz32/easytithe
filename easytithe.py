@@ -37,10 +37,12 @@ class EasyTithe(object):
       'submit': 'Login'
     })
     response = self.opener.open("https://www.easytithe.com/cp/default.asp", login_data)
-    headers = response.info()
-    data = response.read()
-#    if "churchname=" not in headers:
-#      raise LoginException("Login failure. Check username and password.")
+    processed_cookies = [(cookie.name, cookie.value) for cookie in self.cookie_jar
+                         if not cookie.is_expired()]
+    self.cookies = dict(processed_cookies)
+    if 'mbadlogin' in self.cookies:
+      if self.cookies['mbadlogin'] == '1':
+        raise LoginException("Login failure. Check username and password.")
 
   def get_report(self, start_date, end_date, export_csv=False):
     report_url = ('https://www.easytithe.com/cp/report-custom_dated-export.asp?'
