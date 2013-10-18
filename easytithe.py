@@ -1,12 +1,37 @@
 #!/usr/bin/python
 
-"""Library for EasyTithe Manager."""
+"""Python library for Easy Tithe Manager.
+
+Easy Tithe is an online giving platform for churches and organizations that
+makes accepting, tracking and reporting online tithing and donations, well...
+easy.
+
+The Easy Tithe Manager includes a range of reports, which can be viewed by
+person, transaction, fund and date ranges. Access to the Easy Tithe Manager
+is done through the Easy Tithe website at
+https://www.easytithe.com/cp/default.asp.
+
+Easy Tithe library provides an API for logging into the Easy Tithe Manager
+and accessing reports.
+
+Usage:
+  import easytithe
+  
+  et = easytithe.EasyTithe('username', 'passsword')
+  et.login()
+  csv_report_data = et.get_report(
+    start_date='10/6/2013',
+    end_date='10/13/2013')
+  print csv_report_data
+"""
 
 __author__ = 'alex@rohichurch.org (Alex Ortiz-Rosado)'
 
 import cookielib
-import urllib2
+import csv
+import json
 import urllib
+import urllib2
 
 
 class LoginException(Exception):
@@ -52,23 +77,34 @@ class EasyTithe(object):
       export_file = open('export.csv','w')
       export_file.write(report)
       export_file.close()
-    else:
-      print report
-   
+    return report
 
+def csv_to_json(csvfile):
+	"""Utility for converting a CSV file to JSON-formatted output."""
+	f = open(csvfile, 'r')
+	reader = csv.reader(f, delimiter=',', quotechar='"')
+	# skip the headers and any HTML comments
+	row = next(reader)
+	while any('<!--' in r for r in row):
+		row = next(reader)
+	keys = row
+	out = [{key: val for key, val in zip(keys, prop)} for prop in reader]
+	return json.dumps(out, sort_keys = False, indent = 1)
+	
 def main():
   username = '<username>'
   password = '<password>'
 
   et = EasyTithe(username, password)
   et.login()
-  et.get_report('10/6/2013', '10/13/2013')
+  start_date = '9/8/2013'
+  end_date = '9/17/2013'
+  report = et.get_report(start_date, end_date, export_csv=True)
+  print("Easy Tithe Report for: %s to %s in CSV format\n%s") % (
+      start_date, end_date, report)
+  print("Easy Tithe Report for %s to %s in JSON format\n%s") % (
+      start_date, end_date, csv_to_json('export.csv')) 
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
