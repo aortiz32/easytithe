@@ -29,6 +29,7 @@ __author__ = 'alex@rohichurch.org (Alex Ortiz-Rosado)'
 
 import cookielib
 import csv
+from decimal import Decimal
 import json
 import urllib
 import urllib2
@@ -80,30 +81,48 @@ class EasyTithe(object):
     return report
 
 def csv_to_json(csvfile):
-	"""Utility for converting a CSV file to JSON-formatted output."""
-	f = open(csvfile, 'r')
-	reader = csv.reader(f, delimiter=',', quotechar='"')
-	# skip the headers and any HTML comments
-	row = next(reader)
-	while any('<!--' in r for r in row):
-		row = next(reader)
-	keys = row
-	out = [{key: val for key, val in zip(keys, prop)} for prop in reader]
-	return json.dumps(out, sort_keys = False, indent = 1)
-	
+  """Utility for converting a CSV file to JSON-formatted output."""
+  f = open(csvfile, 'r')
+  reader = csv.reader(f, delimiter=',', quotechar='"')
+  # skip the headers and any HTML comments
+  row = next(reader)
+  while any('<!--' in r for r in row):
+    row = next(reader)
+  keys = row
+  out = [{key: val for key, val in zip(keys, prop)} for prop in reader]
+  return json.dumps(out, sort_keys = False)
+
+  
 def main():
   username = '<username>'
   password = '<password>'
-
+  
+  # Login into Easy Tithe Manager 
   et = EasyTithe(username, password)
   et.login()
+
+  # Get Report from Easy Tithe Manager
   start_date = '9/8/2013'
   end_date = '9/17/2013'
   report = et.get_report(start_date, end_date, export_csv=True)
-  print("Easy Tithe Report for: %s to %s in CSV format\n%s") % (
-      start_date, end_date, report)
+   print("Easy Tithe Report for: %s to %s in CSV format\n%s") % (
+         start_date, end_date, report)
+  
+  # Convert CSV data to JSON
+  json_data = json.loads(csv_to_json('export.csv'))
   print("Easy Tithe Report for %s to %s in JSON format\n%s") % (
-      start_date, end_date, csv_to_json('export.csv')) 
+        start_date, end_date, json_data)
+
+  # Report by Name > Fund & Calculate Total Giving
+  total_giving = 0
+  report_by_name = {}
+  for i in range(len(json_data)): 
+    total_giving += Decimal(json_data[i]["Amount"].strip('$'))
+    report_by_name[json_data[i]["Name"]] = {}
+    report_by_name[json_data[i]["Name"]][json_data[i]["Fund"]] = {
+        "amount" : json_data[i]["Amount"]}
+  print report_by_name
+  print "Total giving: %s" % total_giving
 
 
 if __name__ == "__main__":
