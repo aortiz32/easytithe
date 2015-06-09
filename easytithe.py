@@ -12,25 +12,22 @@ is done through the Easy Tithe website at
 https://www.easytithe.com/cp/default.asp.
 
 Easy Tithe library provides an API for logging into the Easy Tithe Manager
-and accessing reports.
+and accessing contribution data.
 
 Usage:
   import easytithe
   
   et = easytithe.EasyTithe('username', 'passsword')
-  et.login()
-  csv_report_data = et.get_report(
+  contributions = et.GetContributions(
     start_date='10/6/2013',
     end_date='10/13/2013')
-  print csv_report_data
+  print contributions
 """
 
 __author__ = 'alex@rohichurch.org (Alex Ortiz-Rosado)'
 
 import cookielib
 import csv
-from decimal import Decimal
-import json
 import urllib
 import urllib2
 
@@ -41,89 +38,77 @@ class LoginException(Exception):
 
 class EasyTithe(object):
   def __init__(self, username, password):
-    self.username = username
-    self.password = password
-
-    self.cookie_jar = cookielib.CookieJar()
+    cookie_jar = cookielib.CookieJar()
 
     self.opener = urllib2.build_opener(
       urllib2.HTTPHandler(debuglevel=0),
       urllib2.HTTPSHandler(debuglevel=0),
-      urllib2.HTTPErrorProcessor(), 
-      urllib2.HTTPRedirectHandler(),
-      urllib2.HTTPCookieProcessor(self.cookie_jar))
+      urllib2.HTTPCookieProcessor(cookie_jar))
 
-    self.opener.addheaders = [('User-agent', 
-      ('Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.1.4322)'))]
+    self.opener.addheaders = [(
+        'User-agent', ('Mozilla/4.0 (compatible; MSIE 6.0; '
+                       'Windows NT 5.2; .NET CLR 1.1.4322)'))]
+    self._Login(username, password, cookie_jar)
 
-  def login(self):
+  def _Login(self, username, password, cookie_jar):
     login_data = urllib.urlencode({
-      'login': self.username,
-      'password': self.password,
+      'login': username,
+      'password': password,
       'submit': 'Login'
     })
-    response = self.opener.open("https://www.easytithe.com/cp/default.asp", login_data)
-    processed_cookies = [(cookie.name, cookie.value) for cookie in self.cookie_jar
+    response = self.opener.open(
+        'https://www.easytithe.com/cp/default.asp',
+        login_data)
+    processed_cookies = [(cookie.name, cookie.value) for cookie in cookie_jar
                          if not cookie.is_expired()]
-    self.cookies = dict(processed_cookies)
-    if 'mbadlogin' in self.cookies:
-      if self.cookies['mbadlogin'] == '1':
-        raise LoginException("Login failure. Check username and password.")
+    cookies = dict(processed_cookies)
+    if 'mbadlogin' in cookies:
+      if cookies['mbadlogin'] == '1':
+        raise LoginException('Login failure. Check username and password.')
 
-  def get_report(self, start_date, end_date, export_csv=False):
+  def GetContributions(self, start_date, end_date):
+    """Returns a list of contributions.
+
+    Args:
+      start_date: Starting date range.
+      end_date: Ending date range.
+
+    Returns:
+      List of contributions as dict:
+        [
+          {
+            'Name': 'John Doe',
+            'Phone': '4085551234',
+            'Env Num': '',
+            'Fund': 'Offering',
+            'Amount': '$50.00',
+            'Txn ID #': '5555551',
+            'Address': '1234 Main St // San Jose, CA 95135',
+            'Date': '5/31/2015 11:30:16 AM',
+            'Type': 'Card-5555 Visa',
+            'Email': 'jdoe555@yahoo.com'
+          }, 
+          {
+            'Name': 'Jane Types',
+            'Phone': '+14085555678',
+            'Env Num': '',
+            'Fund': 'Tithes',
+            'Amount': '$250.00',
+            'Txn ID #': '5555552',
+            'Address': '5555 Acme Drive // San Jose, CA 95138',
+            'Date': '5/31/2015 1:02:33 PM',
+            'Type': 'Card-4455 Visa',
+            'Email': 'janetypes@gmail.com'
+          }
+        ]
+
+    """
     report_url = ('https://www.easytithe.com/cp/report-custom_dated-export.asp?'
                   'sdate=%s&edate=%s&organize=comment') % (start_date, end_date)
-    report = self.opener.open(report_url).read()
-    if export_csv:
-      export_file = open('export.csv','w')
-      export_file.write(report)
-      export_file.close()
-    return report
-
-def csv_to_json(csvfile):
-  """Utility for converting a CSV file to JSON-formatted output."""
-  f = open(csvfile, 'r')
-  reader = csv.reader(f, delimiter=',', quotechar='"')
-  # skip the headers and any HTML comments
-  row = next(reader)
-  while any('<!--' in r for r in row):
-    row = next(reader)
-  keys = row
-  out = [{key: val for key, val in zip(keys, prop)} for prop in reader]
-  return json.dumps(out, sort_keys = False)
-
-  
-def main():
-  username = '<username>'
-  password = '<password>'
-  
-  # Login into Easy Tithe Manager 
-  et = EasyTithe(username, password)
-  et.login()
-
-  # Get Report from Easy Tithe Manager
-  start_date = '9/8/2013'
-  end_date = '9/17/2013'
-  report = et.get_report(start_date, end_date, export_csv=True)
-   print("Easy Tithe Report for: %s to %s in CSV format\n%s") % (
-         start_date, end_date, report)
-  
-  # Convert CSV data to JSON
-  json_data = json.loads(csv_to_json('export.csv'))
-  print("Easy Tithe Report for %s to %s in JSON format\n%s") % (
-        start_date, end_date, json_data)
-
-  # Report by Name > Fund & Calculate Total Giving
-  total_giving = 0
-  report_by_name = {}
-  for i in range(len(json_data)): 
-    total_giving += Decimal(json_data[i]["Amount"].strip('$'))
-    report_by_name[json_data[i]["Name"]] = {}
-    report_by_name[json_data[i]["Name"]][json_data[i]["Fund"]] = {
-        "amount" : json_data[i]["Amount"]}
-  print report_by_name
-  print "Total giving: %s" % total_giving
-
-
-if __name__ == "__main__":
-    main()
+    report_data = self.opener.open(report_url).readlines()
+    report_data = report_data[2:] # Remove the first 2 comment lines.
+    contributions = []
+    reader = csv.DictReader(report_data)
+    for row in reader:
+      contributions.append(row)
+    return contributions
