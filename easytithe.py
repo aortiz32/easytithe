@@ -16,7 +16,7 @@ and accessing contribution data.
 
 Usage:
   import easytithe
-  
+
   et = easytithe.EasyTithe('username', 'passsword')
   contributions = et.GetContributions(
     start_date='10/6/2013',
@@ -24,47 +24,89 @@ Usage:
   print contributions
 """
 
-__author__ = 'alex@rohichurch.org (Alex Ortiz-Rosado)'
+__author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
 import cookielib
 import csv
 import urllib
 import urllib2
+from HTMLParser import HTMLParser
 
 
 class LoginException(Exception):
-  pass
+    pass
+
+
+class _TransferLoginParser(HTMLParser):
+  def __init__(self):
+    HTMLParser.__init__(self)
+    self.data = []
+
+  def handle_starttag(self, tag, attributes):
+    if tag != 'input':
+      return
+    self.data.append(dict(attributes))
 
 
 class EasyTithe(object):
+  """Class for EasyTithe giving platform."""
   def __init__(self, username, password):
-    cookie_jar = cookielib.CookieJar()
+    self.cookie_jar = cookielib.CookieJar()
 
     self.opener = urllib2.build_opener(
-      urllib2.HTTPHandler(debuglevel=0),
-      urllib2.HTTPSHandler(debuglevel=0),
-      urllib2.HTTPCookieProcessor(cookie_jar))
+        urllib2.HTTPHandler(debuglevel=0),
+        urllib2.HTTPSHandler(debuglevel=0),
+        urllib2.HTTPCookieProcessor(self.cookie_jar))
 
     self.opener.addheaders = [(
         'User-agent', ('Mozilla/4.0 (compatible; MSIE 6.0; '
                        'Windows NT 5.2; .NET CLR 1.1.4322)'))]
-    self._Login(username, password, cookie_jar)
+    self._Login(username, password)
 
-  def _Login(self, username, password, cookie_jar):
+  def _GetCookiesAsDict(self):
+    """Returns all cookies as dictionary."""
+    cookies = [(cookie.name, cookie.value) for cookie in self.cookie_jar
+               if not cookie.is_expired()]
+    return dict(cookies)
+
+  def _TransferLogin(self, username, password_hash):
+      """Secondary login for setting CSRF Token."""
+      transfer_login_data = urllib.urlencode({
+          'login': username,
+          'ph': password_hash
+      })
+
+      self.opener.open(
+          'https://www.easytithe.com/cp3o/Account/TransferLogin',
+          transfer_login_data)
+
+  def _Login(self, username, password):
+    """Initial login form."""
     login_data = urllib.urlencode({
-      'login': username,
-      'password': password,
-      'submit': 'Login'
+        'login': username,
+        'password': password,
+        'submit': 'Login'
     })
     response = self.opener.open(
         'https://www.easytithe.com/cp/default.asp',
         login_data)
-    processed_cookies = [(cookie.name, cookie.value) for cookie in cookie_jar
-                         if not cookie.is_expired()]
-    cookies = dict(processed_cookies)
+
+    cookies = self._GetCookiesAsDict()
     if 'mbadlogin' in cookies:
       if cookies['mbadlogin'] == '1':
         raise LoginException('Login failure. Check username and password.')
+
+    parser = _TransferLoginParser()
+    parser.feed(response.read())
+    parser.close()
+    transfer_login_data = parser.data
+
+    for t in transfer_login_data:
+      if t['name'] != 'ph':
+        continue
+      password_hash = t['value']
+
+    self._TransferLogin(username, password_hash)
 
   def GetContributions(self, start_date, end_date):
     """Returns a list of contributions.
@@ -87,7 +129,7 @@ class EasyTithe(object):
             'Date': '5/31/2015 11:30:16 AM',
             'Type': 'Card-5555 Visa',
             'Email': 'jdoe555@yahoo.com'
-          }, 
+          },
           {
             'Name': 'Jane Types',
             'Phone': '+14085555678',
@@ -103,10 +145,15 @@ class EasyTithe(object):
         ]
 
     """
-    report_url = ('https://www.easytithe.com/cp/report-custom_dated-export.asp?'
-                  'sdate=%s&edate=%s&organize=comment') % (start_date, end_date)
-    report_data = self.opener.open(report_url).readlines()
-    report_data = report_data[2:] # Remove the first 2 comment lines.
+    data = urllib.urlencode({
+        'bdate': start_date,
+        'edate': end_date,
+        'organizesort': 'datestamp'
+    })
+    url = ('https://www.easytithe.com/cp3o/Reports/Custom/Export')
+    print self.opener.open(url, data).read()
+    report_data = self.opener.open(url, data).readlines()
+    report_data = report_data[1:]  # Remove the first comment line.
     contributions = []
     reader = csv.DictReader(report_data)
     for row in reader:
