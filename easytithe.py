@@ -50,7 +50,7 @@ class LoginException(Exception):
   pass
 
 
-class _TransferLoginParser(HTMLParser):
+class InputParser(HTMLParser):
   def __init__(self):
     HTMLParser.__init__(self)
     self.data = []
@@ -74,7 +74,11 @@ class EasyTithe(object):
     self.opener.addheaders = [(
         'User-agent', ('Mozilla/4.0 (compatible; MSIE 6.0; '
                        'Windows NT 5.2; .NET CLR 1.1.4322)'))]
+
     self._Login(username, password)
+
+    if (self._GetCustomExportFormat() != CUSTOM_EXPORT_FORMAT):
+      self._SaveCustomExportFormat()
 
   def _GetCookiesAsDict(self):
     """Returns all cookies as dictionary."""
@@ -85,9 +89,10 @@ class EasyTithe(object):
   def _GetCustomExportFormat(self):
     """Returns custom profile format under Organization > Data Export."""
     response = self.opener.open(
-        'https://www.easytithe.com/cp3o/MyAccount/'
-        'GetExportProfileDetails?exportProfileKey=Custom'
+        'https://www.easytithe.com/cp3o/MyAccount/GetExportProfileDetails?'
+        'exportProfileKey=Custom'
         )
+
     custom_profile = json.loads(response.read())
     return custom_profile['churchProfile']['formula']
 
@@ -102,42 +107,35 @@ class EasyTithe(object):
         'https://www.easytithe.com/cp3o/MyAccount/SaveExportProfileOptions',
         form)
 
-  def _TransferLogin(self, username, password_hash):
-      """Secondary login for setting CSRF Token."""
-      form = urllib.urlencode({
-          'login': username,
-          'ph': password_hash
-      })
+  def _GetRequestVerificationToken(self):
+    response = self.opener.open(
+        'https://www.easytithe.com/cp3o/Account/Login')
+    parser = InputParser()
+    parser.feed(response.read())
+    parser.close()
 
-      self.opener.open(
-          'https://www.easytithe.com/cp3o/Account/TransferLogin', form)
+    for d in parser.data:
+      if d['name'] != '__RequestVerificationToken':
+        continue
+      return d['value']
 
   def _Login(self, username, password):
     """Initial login form."""
+    token = self._GetRequestVerificationToken()
+
     form = urllib.urlencode({
-        'login': username,
-        'password': password,
-        'submit': 'Login'
+        'UserName': username,
+        'Password': password,
+        '__RequestVerificationToken': token
     })
+
     response = self.opener.open(
-        'https://www.easytithe.com/cp/default.asp', form)
+        'https://www.easytithe.com/cp3o/Account/Login', form)
 
     cookies = self._GetCookiesAsDict()
     if 'mbadlogin' in cookies:
       if cookies['mbadlogin'] == '1':
         raise LoginException('Login failure. Check username and password.')
-
-    parser = _TransferLoginParser()
-    parser.feed(response.read())
-    parser.close()
-    transfer_login_data = parser.data
-
-    for t in transfer_login_data:
-      if t['name'] != 'ph':
-        continue
-      password_hash = t['value']
-
-    self._TransferLogin(username, password_hash)
 
   def GetContributions(self, start_date, end_date):
     """Returns a list of contributions.
@@ -172,8 +170,6 @@ class EasyTithe(object):
         ]
 
     """
-    if (self._GetCustomExportFormat() != CUSTOM_EXPORT_FORMAT):
-      self._SaveCustomExportFormat()
 
     form = urllib.urlencode({
         'exportProfileKey': 'Custom',
