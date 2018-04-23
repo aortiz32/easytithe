@@ -45,7 +45,12 @@ CONTRIBUTION_FIELD_NAMES = (
 )
 
 
-class LoginException(Exception):
+class UserPermissionError(Exception):
+  """User Permission Error"""
+  pass
+
+
+class LoginError(Exception):
   """Login Error"""
   pass
 
@@ -93,8 +98,14 @@ class EasyTithe(object):
         'exportProfileKey=Custom'
         )
 
-    custom_profile = json.loads(response.read())
-    return custom_profile['churchProfile']['formula']
+    try:
+      custom_profile = json.loads(response.read())
+      return custom_profile['churchProfile']['formula']
+
+    except ValueError:
+      raise UserPermissionError('Unable to access Data Export. '
+        'Check user\'s permissions. User must have access to Organization > '
+        'Data Export.')
 
   def _SaveCustomExportFormat(self):
     """Updates the custom profile format."""
@@ -135,7 +146,7 @@ class EasyTithe(object):
     cookies = self._GetCookiesAsDict()
     if 'mbadlogin' in cookies:
       if cookies['mbadlogin'] == '1':
-        raise LoginException('Login failure. Check username and password.')
+        raise LoginError('Login failure. Check username and password.')
 
   def GetContributions(self, start_date, end_date):
     """Returns a list of contributions.
